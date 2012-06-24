@@ -1,0 +1,36 @@
+#include<stdio.h>
+#include "sample.h"
+
+
+void main()
+{
+    sample S;
+    sample_init(&S);
+
+    MyStackPrint(&S);
+
+    int i = 0;
+    while (i < 30) {
+        push(&S, i);
+        if (full(&S) == 1) {
+        printf("Popped value is: %g\n",pop(&S));
+        }
+        i++;
+    }
+
+    //push(&S, 2.31);
+    //push(&S, 1.19);
+   
+    MyStackPrint(&S);
+
+   //printf("Popped value is: %g\n",pop(&S));
+    
+    //push(&S, 6.7);
+
+    //MyStackPrint(&S);
+
+    //push(&S, pop(&S) + pop(&S)); 
+
+    //MyStackPrint(&S);
+}
+
