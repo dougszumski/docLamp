@@ -1,7 +1,7 @@
 import math 
 
 #Parameters for fade sequence
-pwmLim = 3
+pwmLim = 255
 red = pwmLim
 green = 0
 blue = 0
@@ -47,16 +47,16 @@ print "Pi by 2:", math.pi/2
 
 posRatio = True
 for i in range(numColours):
-    ratio = int(math.tan(quadAngle)*1024)
-
-
+    ratio = abs(int(math.tan(angle)*256))
     if (ratio >= 65535): ratio = 65535
     colourList[i].insert(0,str(ratio))
     colourList[i].append(quadrant)
     colourList[i].append(angle)
-    #quadAngle -= quadrant*(math.pi/2)
     angle += angleIncr
     quadAngle += angleIncr
+    if (quadAngle >= math.pi/2):
+        quadAngle -= math.pi/2
+        quadrant +=1
 
 #Split colour list into quadrants...
 lut0 = []
@@ -129,7 +129,8 @@ for item in lut3:
 #    {"44", "",   "34", "",   "43"}
 #};
 
-
+print "Total colours:",  numColours
+print "Bytes required: ", numColours * (2 + 1)
 
 
 
