@@ -238,10 +238,9 @@ int main()
     ldiv_t dummy;
     uint32_t tempVar;
     int i, j, l, up;
-    uint16_t k, delay;
+    uint16_t k;
     uint8_t quadrant = 0;
-    uint8_t beta, alpha, red,green,blue;
-    uint16_t sum;
+    uint8_t  red,green,blue;
     
     // Init UART and enable globals ints for UART
     uart_init( UART_BAUD_SELECT(UART_BAUD_RATE,F_CPU) ); 
@@ -265,6 +264,15 @@ int main()
         _delay_ms(500);
 	    rgb_fade(255,0,0); 	//red
     }} */
+
+    /*  //Timer test 
+    while(1) {
+        tempVar = 65535;
+        while (tempVar > 0) {
+            tempVar--;}
+
+        PORTB = ~PORTB;
+    } */
 
 
     //Init queue
@@ -350,13 +358,9 @@ int main()
                         break;
                     }
                 }
-                for (i = 1; i < 4; i++){
-                    // Convert integer to char
-                    if (i = 1) { 
-                    red = (uint8_t)pgm_read_word(&lutQ1[k][i]); }
-                    itoa(pgm_read_word(&lutQ1[k][i]), buffer, 10);
-                    strcat(str_out, strcat(buffer, " "));
-                }
+                red = (uint8_t)pgm_read_word(&lutQ1[k][1]);
+                green = (uint8_t)pgm_read_word(&lutQ1[k][2]);
+                blue = (uint8_t)pgm_read_word(&lutQ1[k][3]);
             }
             else if (quadrant == 2){
                 k = 0;
@@ -368,11 +372,9 @@ int main()
                         break;
                     }
                 }
-                for (i = 1; i < 4; i++){
-                    // Convert integer to char
-                    itoa(pgm_read_word(&lutQ2[k][i]), buffer, 10);
-                    strcat(str_out, strcat(buffer, " "));
-                }
+                red = (uint8_t)pgm_read_word(&lutQ2[k][1]);
+                green = (uint8_t)pgm_read_word(&lutQ2[k][2]);
+                blue = (uint8_t)pgm_read_word(&lutQ2[k][3]);
             }
             else if (quadrant == 3){
                 k = 0;
@@ -384,11 +386,9 @@ int main()
                         break;
                     }
                 }
-                for (i = 1; i < 4; i++){
-                    // Convert integer to char
-                    itoa(pgm_read_word(&lutQ3[k][i]), buffer, 10);
-                    strcat(str_out, strcat(buffer, " "));
-                }
+                red = (uint8_t)pgm_read_word(&lutQ3[k][1]);
+                green = (uint8_t)pgm_read_word(&lutQ3[k][2]);
+                blue = (uint8_t)pgm_read_word(&lutQ3[k][3]);
             }
             else {
                 k = 0;
@@ -400,13 +400,18 @@ int main()
                         break;
                     }
                 }
-                for (i = 1; i < 4; i++){
-                    // Convert integer to char
-                    itoa(pgm_read_word(&lutQ4[k][i]), buffer, 10);
-                    strcat(str_out, strcat(buffer, " "));
-                }
+                red = (uint8_t)pgm_read_word(&lutQ4[k][1]);
+                green = (uint8_t)pgm_read_word(&lutQ4[k][2]);
+                blue = (uint8_t)pgm_read_word(&lutQ4[k][3]);
             }
             
+            itoa(red, buffer, 10);
+            strcat(str_out, strcat(buffer, " "));
+            itoa(green, buffer, 10);
+            strcat(str_out, strcat(buffer, " "));
+            itoa(blue, buffer, 10);
+            strcat(str_out, strcat(buffer, " "));
+
             //rgb_fade(
 
             //utoa(k, buffer, 10);
