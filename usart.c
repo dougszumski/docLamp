@@ -5,12 +5,12 @@
 #include <util/delay.h>
 #include <util/twi.h>
 #include <avr/interrupt.h>
-#include <avr/pgmspace.h>
 #include <avr/io.h>
 #include <math.h> 
 #include "i2cmaster.h"
 #include "uart.h"
 #include "sample.h"
+#include "lut.c"
 
 /* CPU frequency */
 #ifndef F_CPU
@@ -47,51 +47,6 @@
 
 /* Macros */
 #define len(x) (sizeof (x) / sizeof (*(x)))
-
-
-static const uint16_t lutQ1[7][4] PROGMEM = {
-   { 211 , 5 , 0 , 0 },
-{ 406 , 5 , 1 , 0 },
-{ 574 , 5 , 2 , 0 },
-{ 714 , 5 , 3 , 0 },
-{ 827 , 5 , 4 , 0 },
-{ 920 , 5 , 5 , 0 },
-{ 995 , 4 , 5 , 0 },
-
-};
-static const uint16_t lutQ2[8][4] PROGMEM = { //reverse
-{ 1027 , 0 , 5 , 4 },
-{ 959 , 0 , 5 , 3 },
-{ 876 , 0 , 5 , 2 },
-{ 773 , 0 , 5 , 1 },
-{ 647 , 0 , 5 , 0 },
-{ 493 , 1 , 5 , 0 },
-{ 311 , 2 , 5 , 0 },
-{ 106 , 3 , 5 , 0 },
-
-};
-
-static const uint16_t lutQ3[7][4] PROGMEM = {
-    { 211 , 0 , 5 , 5 },
-    { 406 , 0 , 4 , 5 },
-    { 574 , 0 , 3 , 5 },
-    { 714 , 0 , 2 , 5 },
-    { 827 , 0 , 1 , 5 },
-    { 920 , 0 , 0 , 5 },
-    { 995 , 1 , 0 , 5 },
-};
-
-static const uint16_t lutQ4[8][4] PROGMEM = { //reverse
-{ 1027 , 5 , 0 , 1 },
-{ 959 , 5 , 0 , 2 },
-{ 876 , 5 , 0 , 3 },
-{ 773 , 5 , 0 , 4 },
-{ 647 , 5 , 0 , 5 },
-{ 493 , 4 , 0 , 5 },
-{ 311 , 3 , 0 , 5 },
-{ 106 , 2 , 0 , 5 },
-
-};
 
 
 int16_t vec[3];
@@ -257,6 +212,7 @@ void rgb_fade(uint8_t red_target, uint8_t green_target, uint8_t blue_target)
 	}  
 } 
 
+/*
 void rgb_fade_d(uint16_t red_target, uint16_t green_target, uint16_t blue_target, uint16_t delay) 
 {	
     //FIXME Pulls in fixed point algo -> 4kb bloat!
@@ -273,6 +229,7 @@ void rgb_fade_d(uint16_t red_target, uint16_t green_target, uint16_t blue_target
 	}
 
 }
+*/
 
 int main()
 {
@@ -309,32 +266,6 @@ int main()
 	    rgb_fade(255,0,0); 	//red
     }} */
 
-    for (;;) 
-	    {
-		    //generate normally distributed pseudo random numbers
-		    sum = 0;
-		    delay = 0;
-		    alpha = 4; // delay distribution width 
-		    beta = (rand() % 10 + 1); //random distribution width for brightness
-
-		    for(i = 0; i < alpha;i++){
-			    delay += (rand() % 255 + 1);
-		    } 
-
-		    for(i = 0; i < beta;i++){
-			    sum += (rand() % 255 + 1);
-		    } 
-		    sum = sum / beta ;
-		    if (sum < 200) sum += 50; //skew to higher levels and prevent it going out
-
-		    //candle colour
-		    red = sum;
-		    green = sum*0.8;
-		    blue = sum*0.15;
-		
-		    rgb_fade_d(red,green,blue, delay*10); 
-		
-	    }
 
     //Init queue
     //sample_init(&X);
@@ -421,6 +352,8 @@ int main()
                 }
                 for (i = 1; i < 4; i++){
                     // Convert integer to char
+                    if (i = 1) { 
+                    red = (uint8_t)pgm_read_word(&lutQ1[k][i]); }
                     itoa(pgm_read_word(&lutQ1[k][i]), buffer, 10);
                     strcat(str_out, strcat(buffer, " "));
                 }
@@ -474,7 +407,8 @@ int main()
                 }
             }
             
-       
+            //rgb_fade(
+
             //utoa(k, buffer, 10);
             //strcat(str_out, buffer);
 
