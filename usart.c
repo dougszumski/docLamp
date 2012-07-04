@@ -43,7 +43,7 @@
 #define KXPS5_CREGC_SET		0x00
 
 /* Number of ms between PWM steps*/
-#define DELAY 10
+#define DELAY 1
 
 /* Macros */
 #define len(x) (sizeof (x) / sizeof (*(x)))
@@ -233,14 +233,15 @@ void rgb_fade_d(uint16_t red_target, uint16_t green_target, uint16_t blue_target
 
 int main()
 {
-    char str_out[32] = "(x,y,z): ";
+    char str_out[64] = "(x,y,z): ";
     char buffer[32];
     ldiv_t dummy;
     uint32_t tempVar;
-    int i, j, l, up;
+    int i, j;
     uint16_t k;
-    uint8_t quadrant = 0;
+    uint16_t quadrant = 0;
     uint8_t  red,green,blue;
+    uint16_t r;
     
     // Init UART and enable globals ints for UART
     uart_init( UART_BAUD_SELECT(UART_BAUD_RATE,F_CPU) ); 
@@ -296,10 +297,10 @@ int main()
 
         // Update acceleration vector and concatenate into string
         updateVector();
-        _delay_ms(1);
+        //_delay_ms(1);
 
         
-        if (j == 255){
+        //if (j == 255){
         
             PORTB = ~PORTB;
 
@@ -312,14 +313,19 @@ int main()
        
             // Calculate y/x using integer division
             tempVar = abs(vec[1]);
-            tempVar = tempVar << 9;
+            tempVar = tempVar << 8;
             //Avoid divide by zero
             if (vec[0] != 0) {
                 dummy = ldiv(tempVar,abs(vec[0]));
             }
             else {
-                dummy.quot = 50000;
+                dummy.quot = 65535;
             }
+            //Clamp the quotient at size of uint16
+            if (dummy.quot > 65535) {
+                dummy.quot = 65535;
+            }
+        
             ultoa(dummy.quot, buffer, 10);
             strcat(str_out, buffer);
             strcat(str_out, ", ");
@@ -327,92 +333,105 @@ int main()
             // Work out which quadrant we're in
             if (vec[0] >= 0) {
                 if (vec[1] >= 0) {
-                    quadrant = 1;
-                }
-                else {
-                    quadrant = 4;
-                }
-            }
-            else if (vec[0] < 0) {
-                if (vec[1] >= 0) {
-                    quadrant = 2;
+                    quadrant = 0;
                 }
                 else {
                     quadrant = 3;
                 }
             }
-            utoa(quadrant, buffer, 10);
-            strcat(str_out, buffer);
-            strcat(str_out, ", ");
+            else if (vec[0] < 0) {
+                if (vec[1] >= 0) {
+                    quadrant = 1;
+                }
+                else {
+                    quadrant = 2;
+                }
+            }
+            //utoa(quadrant, buffer, 10);
+            //strcat(str_out, buffer);
+            //strcat(str_out, ", ");
 
             // Now look up the PWM values...
             //TODO move this into a function
             
-            if (quadrant == 1){
-                k = 0;
-                for (l = 0; l < len(lutQ1)-1; l++){
-                    if (pgm_read_word(&lutQ1[l][0]) < dummy.quot) {
-                       k++;
-                    }
-                    else {
-                        break;
-                    }
+            k = 0;
+            if ( (quadrant == 0) | (quadrant == 2) ){
+                //Ratio is increasing throughout the quadrant so count up
+                //Ensure that entry in the lut is >= to the quotient
+                while ((uint16_t)dummy.quot > pgm_read_word(&lut[k])){
+                    k++;  
                 }
-                red = (uint8_t)pgm_read_word(&lutQ1[k][1]);
-                green = (uint8_t)pgm_read_word(&lutQ1[k][2]);
-                blue = (uint8_t)pgm_read_word(&lutQ1[k][3]);
-            }
-            else if (quadrant == 2){
-                k = 0;
-                for (l = 0; l < len(lutQ2)-1; l++){
-                    if (pgm_read_word(&lutQ2[l][0]) < dummy.quot) {
-                       k++;
-                    }
-                    else {
-                        break;
-                    }
-                }
-                red = (uint8_t)pgm_read_word(&lutQ2[k][1]);
-                green = (uint8_t)pgm_read_word(&lutQ2[k][2]);
-                blue = (uint8_t)pgm_read_word(&lutQ2[k][3]);
-            }
-            else if (quadrant == 3){
-                k = 0;
-                for (l = 0; l < len(lutQ3)-1; l++){
-                    if (pgm_read_word(&lutQ3[l][0]) < dummy.quot) {
-                       k++;
-                    }
-                    else {
-                        break;
-                    }
-                }
-                red = (uint8_t)pgm_read_word(&lutQ3[k][1]);
-                green = (uint8_t)pgm_read_word(&lutQ3[k][2]);
-                blue = (uint8_t)pgm_read_word(&lutQ3[k][3]);
             }
             else {
-                k = 0;
-                for (l = 0; l < len(lutQ4)-1; l++){
-                    if (pgm_read_word(&lutQ4[l][0]) < dummy.quot) {
-                       k++;
-                    }
-                    else {
-                        break;
-                    }
+                //Ratio is decreasing so count down
+                k = 382 ;//len(lut)-1;
+                //Ensure that entry in the lut is >= to the quotient
+                while (pgm_read_word(&lut[k]) > dummy.quot ){
+                    k--;
                 }
-                red = (uint8_t)pgm_read_word(&lutQ4[k][1]);
-                green = (uint8_t)pgm_read_word(&lutQ4[k][2]);
-                blue = (uint8_t)pgm_read_word(&lutQ4[k][3]);
+                //Invert k
+                k = 382 - k;
             }
-            
-            itoa(red, buffer, 10);
-            strcat(str_out, strcat(buffer, " "));
-            itoa(green, buffer, 10);
-            strcat(str_out, strcat(buffer, " "));
-            itoa(blue, buffer, 10);
-            strcat(str_out, strcat(buffer, " "));
 
-            //rgb_fade(
+            utoa(quadrant, buffer, 10);
+            strcat(str_out, buffer);
+            strcat(str_out, ", ");
+            
+            itoa(k, buffer, 10);
+            uart_puts(buffer);  
+            //Now calculate the colour: 
+            for (int f=0; f < quadrant; f++) {
+                k += 383; 
+            }
+
+            red = 255;
+            green = 0;
+            blue = 0;
+            
+            strcat(str_out, "k: ");
+            itoa(k, buffer, 10);
+            strcat(str_out, buffer);
+            
+            while (green < 255 && k > 0){
+                green++;
+                k--;         
+            }
+            while (red > 0 && k > 0) {
+                red--;
+                k--;
+            }
+            while (blue < 255 && k > 0) {
+                blue++;
+                k--;
+            }
+            while (green > 0 && k > 0) {
+                green--;
+                k--;
+            }
+            while (red < 255 && k > 0) {
+                red++;
+                k--;
+            }
+            while (blue > 0 && k > 0) {
+                blue--;
+                k--;
+            }
+         
+            
+            strcat(str_out, ", (");
+            itoa(red, buffer, 10);
+            strcat(str_out, strcat(buffer, ","));
+            itoa(green, buffer, 10);
+            strcat(str_out, strcat(buffer, ","));
+            itoa(blue, buffer, 10);
+            strcat(str_out, strcat(buffer, "), L:"));
+            
+            rgb_fade(red, green, blue);
+
+            r = sqrt(square(vec[0]) + square(vec[1]) + square(vec[2]));
+
+            ultoa(r, buffer, 10);
+            strcat(str_out, strcat(buffer, ""));
 
             //utoa(k, buffer, 10);
             //strcat(str_out, buffer);
@@ -422,8 +441,11 @@ int main()
             str_out[9] = '\0';
 
             j = 0;
-        }
-        j++;
+
+            
+
+        //}
+        //j++;
         
     }	
 }
