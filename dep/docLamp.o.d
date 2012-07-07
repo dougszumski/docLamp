@@ -19,7 +19,7 @@ docLamp.o: docLamp.c \
  /usr/lib/gcc/avr/4.6.3/../../../../avr/include/avr/interrupt.h \
  /usr/lib/gcc/avr/4.6.3/../../../../avr/include/math.h i2cmaster.h uart.h \
  sample.h lut.c \
- /usr/lib/gcc/avr/4.6.3/../../../../avr/include/avr/pgmspace.h
+ /usr/lib/gcc/avr/4.6.3/../../../../avr/include/avr/pgmspace.h ADXL345.h
 
 /usr/lib/gcc/avr/4.6.3/../../../../avr/include/stdlib.h:
 
@@ -68,3 +68,5 @@ sample.h:
 lut.c:
 
 /usr/lib/gcc/avr/4.6.3/../../../../avr/include/avr/pgmspace.h:
+
+ADXL345.h:

@@ -11,6 +11,7 @@
 #include "uart.h"
 #include "sample.h"
 #include "lut.c"
+#include "ADXL345.h"
 
 /* CPU frequency */
 #ifndef F_CPU
@@ -20,159 +21,14 @@
 /* UART baud */
 #define UART_BAUD_RATE      57600      
 
-/* ADXL345 I2C Address (Alt. addr. pin grounded) */
-#define ADXL345 0xA6
-#define ADXL345_ID 0xE5
-#define ADXL345_IDREG 0x00
-#define POWER_CTL 0x2D
-#define POWER_CTL_SET 0b00101000
-#define DATA_FORMAT 0x31
-#define DATA_FORMAT_SET 0b00001000
-#define DATAX0 0x32
-
 /* Number of ms between PWM steps*/
 #define DELAY 1
 
 /* Macros */
 #define len(x) (sizeof (x) / sizeof (*(x)))
 
-/* Double Tap */
-#define THRESH_TAP 0x1D
-#define DUR 0x21
-#define LATENT 0x22
-#define WINDOW 0x23
-#define TAP_AXES 0x2A
-#define ACT_TAP_STATUS 0x2B
-
-/* Interrupts */
-#define INT_ENABLE 0x2E
-#define INT_MAP 0x2F
-#define INT_SOURCE 0x30
-
-void initDoubleTap(void)
-{
-    //Set tap threshold: 62.5mg/LSB
-    i2c_start_wait(ADXL345+I2C_WRITE);
-    i2c_write(THRESH_TAP); 
-    i2c_write(0x40);         
-    i2c_stop();
-
-    //TODO These three can get written together
-    //Maximum time above thereshold to be classed as a tap: 625us/LSB
-    i2c_start_wait(ADXL345+I2C_WRITE);     
-    i2c_write(DUR); 
-    i2c_write(0x10);         
-    i2c_stop();
-    
-    //Latent time from detection of first tap to start of time window: 1.25ms/LSB
-    i2c_start_wait(ADXL345+I2C_WRITE);    
-    i2c_write(LATENT); 
-    i2c_write(0x10);         
-    i2c_stop();
-
-    //Time after expiry of latent time in which a second tap can occur: 1.25ms/LSB
-    i2c_start_wait(ADXL345+I2C_WRITE);     
-    i2c_write(WINDOW); 
-    i2c_write(0x40);         
-    i2c_stop();
-
-    //Tap axes: |0|0|0|0|suppress|tapxEn|tapyEn|tapzEn|
-    i2c_start_wait(ADXL345+I2C_WRITE);    
-    i2c_write(TAP_AXES); 
-    i2c_write(0b00001111); //Supress, all axes         
-    i2c_stop();
-
-    //Interrupt enable for double tap
-    i2c_start_wait(ADXL345+I2C_WRITE);     // set device address and write mode
-    i2c_write(INT_ENABLE); 
-    i2c_write(0b00100000);         
-    i2c_stop();
-
-    //Which pins the interrupts go to: p26.
-    i2c_start_wait(ADXL345+I2C_WRITE);     // set device address and write mode
-    i2c_write(INT_MAP); 
-    i2c_write(0b00000000);         
-    i2c_stop();
-        
-}
-
-
 int16_t vec[3];
-
-sample X, Y, Z;
-
-void updateVector(void)
-{
-    uint16_t xH, xL, yH, yL, zH, zL;
-
-    // Read the acceleration registers sequentially 
-    i2c_start(ADXL345+I2C_WRITE); // Set device address and write mode
-    i2c_start_wait(ADXL345+I2C_WRITE);    // Set device address and write mode
-    i2c_write(DATAX0); // Start reading at xH, auto increments to zL
-    i2c_rep_start(ADXL345+I2C_READ);  // Set device address and read mode
-    xL = i2c_readAck();                    
-    xH = i2c_readAck();  
-    yL = i2c_readAck();                    
-    yH = i2c_readAck();  
-    zL = i2c_readAck();                    
-    zH = i2c_readNak();  
-    i2c_stop();
-
-    // Update the acceleration vector -- assumes data is right justified
-    sample_push(&X, (xH << 8) | xL);
-    sample_push(&Y, (yH << 8) | yL);
-    sample_push(&Z, (zH << 8) | zL);
-
-    //vec[0] = sample_average(&X);
-    //vec[1] = sample_average(&Y);
-    //vec[2] = sample_average(&Z);
-    
-    //Data is Right justified
-    vec[0] = (((xH << 8) | xL)) ;
-    vec[1] = (((yH << 8) | yL)) ;
-    vec[2] = (((zH << 8) | zL)) ;
-
-}
-
-uint8_t devidADXL345(void)
-{
-    uint8_t deviceID;
-     /* Read back the device ID */
-    i2c_start(ADXL345+I2C_WRITE); // Set device address and write mode
-    i2c_start_wait(ADXL345+I2C_WRITE);    // Set device address and write mode
-    i2c_write(ADXL345_IDREG); // Reading here
-    i2c_rep_start(ADXL345+I2C_READ);  // Set device address and read mode               
-    deviceID = i2c_readNak();  
-    i2c_stop();
-
-    return deviceID;
-}
-
-void intregADXL345(void)
-{
-     /* Read the interupt source and do nothing with it (clears bit)*/
-    i2c_start(ADXL345+I2C_WRITE); // Set device address and write mode
-    i2c_start_wait(ADXL345+I2C_WRITE);    // Set device address and write mode
-    i2c_write(INT_SOURCE); // Reading here
-    i2c_rep_start(ADXL345+I2C_READ);  // Set device address and read mode               
-    i2c_readNak();  
-    i2c_stop();
-
-}
-
-void initADXL345(void)
-{
-     //Configure the KXPS5 setup registers
-    i2c_start_wait(ADXL345+I2C_WRITE);     // set device address and write mode
-    i2c_write(POWER_CTL); 
-    i2c_write(POWER_CTL_SET);         
-    i2c_stop();
-
-    i2c_start_wait(ADXL345+I2C_WRITE);     // set device address and write mode
-    i2c_write(DATA_FORMAT); 
-    i2c_write(DATA_FORMAT_SET);         
-    i2c_stop();
-}
+//sample X, Y, Z;
 
 void configPorts(void)
 {
@@ -238,12 +94,10 @@ void init_OC2 (void)
 	TCCR2 |= (1 << CS22); 
 } 
 
-//RGB fader 
-
+//RGB fader
 void rgb_fade(uint8_t red_target, uint8_t green_target, uint8_t blue_target) 
 {	
 	//Adjust brightness level to targets	
-    
 	while ( (OCR1B != red_target) | (OCR2 != green_target) | (OCR1A != blue_target)) 
 	{
 		if (OCR1B < red_target) OCR1B++;
@@ -255,27 +109,6 @@ void rgb_fade(uint8_t red_target, uint8_t green_target, uint8_t blue_target)
 		_delay_ms(DELAY);
 	}  
 } 
-
-/*
-void rgb_fade_d(uint16_t red_target, uint16_t green_target, uint16_t blue_target, uint16_t delay) 
-{	
-    //FIXME Pulls in fixed point algo -> 4kb bloat!
-	//Adjust brightness level to targets	
-    while ( (OCR1B != red_target) | (OCR2 != green_target) | (OCR1A != blue_target)) 
-	{
-		if (OCR1B < red_target) OCR1B++;
-		if (OCR1B > red_target) OCR1B--;
-		if (OCR2 < green_target) OCR2++;
-		if (OCR2 > green_target) OCR2--;
-		if (OCR1A < blue_target) OCR1A++;
-		if (OCR1A > blue_target) OCR1A--;
-		_delay_us(delay);
-	}
-
-}
-*/
-
-
 
 void init_INT0 (void) //Pin D2
 {
@@ -312,11 +145,11 @@ int main()
 
     // Initialise I2C and the ADXL345
     i2c_init();
-    initADXL345();
-    initDoubleTap();
-    while(1){intregADXL345();
-    _delay_ms(2000);
-    };
+    ADXL345_init();
+    ADXL345_initDoubleTap();
+    //while(1){ADXL345_clearInt();
+    //_delay_ms(2000);
+    //};
    
     // Lamp test 
     /*
@@ -352,7 +185,7 @@ int main()
     //init_OC1A_CTC();
 
     //Print device ID
-    itoa(devidADXL345(), buffer, 10);
+    itoa(ADXL345_devID(), buffer, 10);
     uart_puts(buffer);  
 
     uart_puts("KXPS5 Initialised\n");
@@ -360,7 +193,7 @@ int main()
     while(1){
 
         // Update acceleration vector and concatenate into string
-        updateVector();
+        ADXL345_updateVector(vec);
         _delay_ms(1);
 
         
@@ -491,10 +324,10 @@ int main()
             
             rgb_fade(red, green, blue);
 
-            r = sqrt(square(vec[0]) + square(vec[1]) + square(vec[2]));
+            //r = sqrt(square(vec[0]) + square(vec[1]) + square(vec[2]));
 
-            ultoa(r, buffer, 10);
-            strcat(str_out, strcat(buffer, ""));
+            //ultoa(r, buffer, 10);
+            //strcat(str_out, strcat(buffer, ""));
 
             //utoa(k, buffer, 10);
             //strcat(str_out, buffer);
