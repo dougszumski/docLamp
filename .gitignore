@@ -1,0 +1,15 @@
+*~
+*.lock
+*.out
+*.swp
+*.zip
+*.html
+*.css
+*.hex
+*.eep
+*.lss
+*.map
+*.elf
+*.o
+
+

@@ -18,7 +18,7 @@ void main()
     for(i =0 ; i< SAMPLE_SIZE ; i++) {
         printf("%d\n",S.data[i]);
     }
-    printf("Average is: %g\n", sample_average(&S));
+    printf("Average is: %d\n", sample_average(&S));
 
 
 }

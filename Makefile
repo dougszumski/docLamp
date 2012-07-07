@@ -1,11 +1,11 @@
 ###############################################################################
-# Makefile for the project usart
+# Makefile for the project docLamp
 ###############################################################################
 
 ## General Flags
-PROJECT = usart
+PROJECT = docLamp
 MCU = atmega8
-TARGET = usart.elf
+TARGET = docLamp.elf
 CC = avr-gcc
 
 ## Options common to compile, link and assembly rules
@@ -23,7 +23,7 @@ ASMFLAGS += -x assembler-with-cpp -Wa,-gdwarf2
 
 ## Linker flags
 LDFLAGS = $(COMMON)
-LDFLAGS +=  -Wl,-Map=usart.map -lm
+LDFLAGS +=  -Wl,-Map=docLamp.map -lm
 
 ## Intel Hex file production flags
 HEX_FLASH_FLAGS = -R .eeprom -R .fuse -R .lock -R .signature
@@ -34,16 +34,16 @@ HEX_EEPROM_FLAGS += --change-section-lma .eeprom=0 --no-change-warnings
 
 
 ## Objects that must be built in order to link
-OBJECTS = usart.o 
+OBJECTS = docLamp.o 
 
 ## Objects explicitly added by the user
-LINKONLYOBJECTS = twimaster.c uart.c sample.c
+LINKONLYOBJECTS = twimaster.c uart.c sample.c lut.c
 
 ## Build
-all: $(TARGET) usart.hex usart.eep usart.lss 
+all: $(TARGET) docLamp.hex docLamp.eep docLamp.lss 
 
 ## Compile
-usart.o: usart.c
+docLamp.o: docLamp.c
 	$(CC) $(INCLUDES) $(CFLAGS) -c  $<
 
 ##Link
@@ -63,7 +63,7 @@ $(TARGET): $(OBJECTS)
 ## Clean target
 .PHONY: clean
 clean:
-	-rm -rf $(OBJECTS) usart.elf dep/* usart.hex usart.eep usart.lss usart.map
+	-rm -rf $(OBJECTS) docLamp.elf dep/* docLamp.hex docLamp.eep docLamp.lss docLamp.map
 
 
 ## Other dependencies

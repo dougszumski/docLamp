@@ -1,7 +1,7 @@
 import math 
 
 #Parameters for fade sequence
-pwmLim = 3
+pwmLim = 255
 red = pwmLim
 green = 0
 blue = 0
@@ -38,7 +38,7 @@ print "Number of colours: ", numColours
 
 #Angle calculation 
 angleIncr = (2*math.pi)/ numColours
-angle = angleIncr
+angle = 0 #angleIncr
 quadAngle = angle
 countingUp = True
 quadrant = 0
@@ -47,32 +47,16 @@ print "Pi by 2:", math.pi/2
 
 posRatio = True
 for i in range(numColours):
-    ratio = int(math.tan(quadAngle)*1024)
-
-
+    ratio = abs(int(math.tan(angle)*256))
     if (ratio >= 65535): ratio = 65535
     colourList[i].insert(0,str(ratio))
     colourList[i].append(quadrant)
     colourList[i].append(angle)
-    #quadAngle -= quadrant*(math.pi/2)
     angle += angleIncr
     quadAngle += angleIncr
-
-    #if countingUp:
-    #    if (quadAngle < math.pi/2 - angleIncr):
-    #        quadAngle+=angleIncr
-    #    else: 
-    #        #quadAngle = math.pi/2
-    #        diff =  math.pi/2 - quadAngle
-    #        quadAngle = math.pi/2 -diff
-    #        countingUp = False
-    #        quadrant +=1
-    #else:
-    #    if (quadAngle > (angleIncr+ 0.1)):
-    #        quadAngle-=angleIncr
-    #    else:
-    #        countingUp = True
-    #        quadrant +=1
+    if (quadAngle >= math.pi/2):
+        quadAngle -= math.pi/2
+        quadrant +=1
 
 #Split colour list into quadrants...
 lut0 = []
@@ -111,16 +95,17 @@ lut3Copy = lut3
 
 print "\nLUT 1: dim[",len(lut0),"][4]\n" 
 for item in lut0:
-    print '{', item[0], ',', item[1],',', item[2],',', item[3], '},'
-print "\nLUT 2: dim[",len(lut1),"][4]\n" 
-for item in lut1:
-    print '{', item[0], ',', item[1],',', item[2],',', item[3], '},'
-print "\nLUT 3: dim[",len(lut2),"][4]\n" 
-for item in lut2:
-    print '{', item[0], ',', item[1],',', item[2],',', item[3], '},'
-print "\nLUT 4: dim[",len(lut3),"][4]\n" 
-for item in lut3:
-    print '{', item[0], ',', item[1],',', item[2],',', item[3], '},'
+    #print '{', item[0], ',', item[1],',', item[2],',', item[3], '},'
+    print item[0]+','
+#print "\nLUT 2: dim[",len(lut1),"][4]\n" 
+#for item in lut1:
+#    print '{', item[0], ',', item[1],',', item[2],',', item[3], '},'
+#print "\nLUT 3: dim[",len(lut2),"][4]\n" 
+#for item in lut2:
+#    print '{', item[0], ',', item[1],',', item[2],',', item[3], '},'
+#print "\nLUT 4: dim[",len(lut3),"][4]\n" 
+#for item in lut3:
+#    print '{', item[0], ',', item[1],',', item[2],',', item[3], '},'
 
 #print
 #for item in lut0:   
@@ -145,7 +130,9 @@ for item in lut3:
 #    {"44", "",   "34", "",   "43"}
 #};
 
-
+print "Colours in LUT", len(lut0)
+print "Total colours:",  numColours
+print "Bytes required: ", numColours * (2 + 1)
 
 
 

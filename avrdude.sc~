@@ -1,1 +1,1 @@
-su -c 'avrdude -c jtag2isp -p m16 -P usb -U flash:w:usart.hex -B 16'
+sudo avrdude -c jtag2isp -p m8 -P usb -U flash:w:doclamp.hex -B 16

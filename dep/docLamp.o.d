@@ -1,4 +1,5 @@
-usart.o: usart.c /usr/lib/gcc/avr/4.6.3/../../../../avr/include/stdlib.h \
+docLamp.o: docLamp.c \
+ /usr/lib/gcc/avr/4.6.3/../../../../avr/include/stdlib.h \
  /usr/lib/gcc/avr/4.6.3/include/stddef.h \
  /usr/lib/gcc/avr/4.6.3/include/stdint.h \
  /usr/lib/gcc/avr/4.6.3/../../../../avr/include/stdint.h \
@@ -16,9 +17,9 @@ usart.o: usart.c /usr/lib/gcc/avr/4.6.3/../../../../avr/include/stdlib.h \
  /usr/lib/gcc/avr/4.6.3/../../../../avr/include/avr/fuse.h \
  /usr/lib/gcc/avr/4.6.3/../../../../avr/include/avr/lock.h \
  /usr/lib/gcc/avr/4.6.3/../../../../avr/include/avr/interrupt.h \
- /usr/lib/gcc/avr/4.6.3/../../../../avr/include/avr/pgmspace.h \
  /usr/lib/gcc/avr/4.6.3/../../../../avr/include/math.h i2cmaster.h uart.h \
- sample.h
+ sample.h lut.c \
+ /usr/lib/gcc/avr/4.6.3/../../../../avr/include/avr/pgmspace.h
 
 /usr/lib/gcc/avr/4.6.3/../../../../avr/include/stdlib.h:
 
@@ -56,8 +57,6 @@ usart.o: usart.c /usr/lib/gcc/avr/4.6.3/../../../../avr/include/stdlib.h \
 
 /usr/lib/gcc/avr/4.6.3/../../../../avr/include/avr/interrupt.h:
 
-/usr/lib/gcc/avr/4.6.3/../../../../avr/include/avr/pgmspace.h:
-
 /usr/lib/gcc/avr/4.6.3/../../../../avr/include/math.h:
 
 i2cmaster.h:
@@ -65,3 +64,7 @@ i2cmaster.h:
 uart.h:
 
 sample.h:
+
+lut.c:
+
+/usr/lib/gcc/avr/4.6.3/../../../../avr/include/avr/pgmspace.h:

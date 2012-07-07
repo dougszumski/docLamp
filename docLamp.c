@@ -5,12 +5,12 @@
 #include <util/delay.h>
 #include <util/twi.h>
 #include <avr/interrupt.h>
-#include <avr/pgmspace.h>
 #include <avr/io.h>
 #include <math.h> 
 #include "i2cmaster.h"
 #include "uart.h"
 #include "sample.h"
+#include "lut.c"
 
 /* CPU frequency */
 #ifndef F_CPU
@@ -24,80 +24,82 @@
 #define ADXL345 0xA6
 #define ADXL345_ID 0xE5
 #define ADXL345_IDREG 0x00
-
 #define POWER_CTL 0x2D
 #define POWER_CTL_SET 0b00101000
-
 #define DATA_FORMAT 0x31
 #define DATA_FORMAT_SET 0b00001000
-
 #define DATAX0 0x32
 
-/* KXPS5 register locations */
-#define KXPS5_CREGB		0x0D
-#define KXPS5_CREGC		0x0C
-#define KXPS5_XHIGH     0x00
-
-/* KXPS5 chip register settings */
-#define KXPS5_CREGB_SET		0x42
-#define KXPS5_CREGC_SET		0x00
-
 /* Number of ms between PWM steps*/
-#define DELAY 10
+#define DELAY 1
 
 /* Macros */
 #define len(x) (sizeof (x) / sizeof (*(x)))
 
+/* Double Tap */
+#define THRESH_TAP 0x1D
+#define DUR 0x21
+#define LATENT 0x22
+#define WINDOW 0x23
+#define TAP_AXES 0x2A
+#define ACT_TAP_STATUS 0x2B
 
-static const uint16_t lutQ1[7][4] PROGMEM = {
-   { 211 , 5 , 0 , 0 },
-{ 406 , 5 , 1 , 0 },
-{ 574 , 5 , 2 , 0 },
-{ 714 , 5 , 3 , 0 },
-{ 827 , 5 , 4 , 0 },
-{ 920 , 5 , 5 , 0 },
-{ 995 , 4 , 5 , 0 },
+/* Interrupts */
+#define INT_ENABLE 0x2E
+#define INT_MAP 0x2F
+#define INT_SOURCE 0x30
 
-};
-static const uint16_t lutQ2[8][4] PROGMEM = { //reverse
-{ 1027 , 0 , 5 , 4 },
-{ 959 , 0 , 5 , 3 },
-{ 876 , 0 , 5 , 2 },
-{ 773 , 0 , 5 , 1 },
-{ 647 , 0 , 5 , 0 },
-{ 493 , 1 , 5 , 0 },
-{ 311 , 2 , 5 , 0 },
-{ 106 , 3 , 5 , 0 },
+void initDoubleTap(void)
+{
+    //Set tap threshold: 62.5mg/LSB
+    i2c_start_wait(ADXL345+I2C_WRITE);
+    i2c_write(THRESH_TAP); 
+    i2c_write(0x40);         
+    i2c_stop();
 
-};
+    //TODO These three can get written together
+    //Maximum time above thereshold to be classed as a tap: 625us/LSB
+    i2c_start_wait(ADXL345+I2C_WRITE);     
+    i2c_write(DUR); 
+    i2c_write(0x10);         
+    i2c_stop();
+    
+    //Latent time from detection of first tap to start of time window: 1.25ms/LSB
+    i2c_start_wait(ADXL345+I2C_WRITE);    
+    i2c_write(LATENT); 
+    i2c_write(0x10);         
+    i2c_stop();
 
-static const uint16_t lutQ3[7][4] PROGMEM = {
-    { 211 , 0 , 5 , 5 },
-    { 406 , 0 , 4 , 5 },
-    { 574 , 0 , 3 , 5 },
-    { 714 , 0 , 2 , 5 },
-    { 827 , 0 , 1 , 5 },
-    { 920 , 0 , 0 , 5 },
-    { 995 , 1 , 0 , 5 },
-};
+    //Time after expiry of latent time in which a second tap can occur: 1.25ms/LSB
+    i2c_start_wait(ADXL345+I2C_WRITE);     
+    i2c_write(WINDOW); 
+    i2c_write(0x40);         
+    i2c_stop();
 
-static const uint16_t lutQ4[8][4] PROGMEM = { //reverse
-{ 1027 , 5 , 0 , 1 },
-{ 959 , 5 , 0 , 2 },
-{ 876 , 5 , 0 , 3 },
-{ 773 , 5 , 0 , 4 },
-{ 647 , 5 , 0 , 5 },
-{ 493 , 4 , 0 , 5 },
-{ 311 , 3 , 0 , 5 },
-{ 106 , 2 , 0 , 5 },
+    //Tap axes: |0|0|0|0|suppress|tapxEn|tapyEn|tapzEn|
+    i2c_start_wait(ADXL345+I2C_WRITE);    
+    i2c_write(TAP_AXES); 
+    i2c_write(0b00001111); //Supress, all axes         
+    i2c_stop();
 
-};
+    //Interrupt enable for double tap
+    i2c_start_wait(ADXL345+I2C_WRITE);     // set device address and write mode
+    i2c_write(INT_ENABLE); 
+    i2c_write(0b00100000);         
+    i2c_stop();
+
+    //Which pins the interrupts go to: p26.
+    i2c_start_wait(ADXL345+I2C_WRITE);     // set device address and write mode
+    i2c_write(INT_MAP); 
+    i2c_write(0b00000000);         
+    i2c_stop();
+        
+}
 
 
 int16_t vec[3];
 
 sample X, Y, Z;
-
 
 void updateVector(void)
 {
@@ -131,21 +133,6 @@ void updateVector(void)
     vec[2] = (((zH << 8) | zL)) ;
 
 }
-/*
-void setupKXPS5(void)
-{
-    //Configure the KXPS5 setup registers
-    i2c_start_wait(KXPS5+I2C_WRITE);     // set device address and write mode
-    i2c_write(KXPS5_CREGB); 
-    i2c_write(KXPS5_CREGB_SET);         
-    i2c_stop();
-    i2c_start_wait(KXPS5+I2C_WRITE);     // set device address and write mode
-    i2c_write(KXPS5_CREGC);
-    i2c_write(KXPS5_CREGC_SET);
-    i2c_stop();
-}
-
-*/
 
 uint8_t devidADXL345(void)
 {
@@ -159,6 +146,18 @@ uint8_t devidADXL345(void)
     i2c_stop();
 
     return deviceID;
+}
+
+void intregADXL345(void)
+{
+     /* Read the interupt source and do nothing with it (clears bit)*/
+    i2c_start(ADXL345+I2C_WRITE); // Set device address and write mode
+    i2c_start_wait(ADXL345+I2C_WRITE);    // Set device address and write mode
+    i2c_write(INT_SOURCE); // Reading here
+    i2c_rep_start(ADXL345+I2C_READ);  // Set device address and read mode               
+    i2c_readNak();  
+    i2c_stop();
+
 }
 
 void initADXL345(void)
@@ -187,7 +186,7 @@ void configPorts(void)
     PORTB = 0x00;
     PORTB = ((1<<PB0) | (0<<PB1) | (0<<PB2) | (0<<PB3)); //Turn LED off
     PORTC = 0xFF;
-    PORTD = 0xFF;
+    PORTD = 0x00; //only d3 needsa to be 0
 }
 
 void init_OC1A_CTC (void) //16 bit CTC counter
@@ -257,11 +256,11 @@ void rgb_fade(uint8_t red_target, uint8_t green_target, uint8_t blue_target)
 	}  
 } 
 
+/*
 void rgb_fade_d(uint16_t red_target, uint16_t green_target, uint16_t blue_target, uint16_t delay) 
 {	
-
+    //FIXME Pulls in fixed point algo -> 4kb bloat!
 	//Adjust brightness level to targets	
-
     while ( (OCR1B != red_target) | (OCR2 != green_target) | (OCR1A != blue_target)) 
 	{
 		if (OCR1B < red_target) OCR1B++;
@@ -273,22 +272,34 @@ void rgb_fade_d(uint16_t red_target, uint16_t green_target, uint16_t blue_target
 		_delay_us(delay);
 	}
 
-	
 }
+*/
+
+
+
+void init_INT0 (void) //Pin D2
+{
+    DDRD |= (0<<DDRD);
+	//PORTD |= (0<<PD3);
+	MCUCR |= (0 << ISC01) | (1 << ISC00); //Level change for int. p66
+	GICR |= (1 << INT0); //Enable INT0
+	sei();
+}
+
+
 
 int main()
 {
-    char str_out[32] = "(x,y,z): ";
+    char str_out[64] = "(x,y,z): ";
     char buffer[32];
     ldiv_t dummy;
     uint32_t tempVar;
-    int i, j, l, up;
-    uint16_t k, delay;
-    uint8_t quadrant = 0;
-    uint8_t beta, alpha, red,green,blue;
-    uint16_t sum;
+    int i, j;
+    uint16_t k;
+    uint16_t quadrant = 0;
+    uint8_t  red,green,blue;
+    uint16_t r;
     
-
     // Init UART and enable globals ints for UART
     uart_init( UART_BAUD_SELECT(UART_BAUD_RATE,F_CPU) ); 
     sei();
@@ -296,6 +307,16 @@ int main()
     init_OC1A();
     init_OC1B();
     init_OC2();
+
+    init_INT0();
+
+    // Initialise I2C and the ADXL345
+    i2c_init();
+    initADXL345();
+    initDoubleTap();
+    while(1){intregADXL345();
+    _delay_ms(2000);
+    };
    
     // Lamp test 
     /*
@@ -312,47 +333,27 @@ int main()
 	    rgb_fade(255,0,0); 	//red
     }} */
 
-    for (;;) 
-	    {
-		    //generate normally distributed pseudo random numbers
-		    sum = 0;
-		    delay = 0;
-		    alpha = 4; // delay distribution width 
-		    beta = (rand() % 10 + 1); //random distribution width for brightness
+    /*  //Timer test 
+    while(1) {
+        tempVar = 65535;
+        while (tempVar > 0) {
+            tempVar--;}
 
-		    for(i = 0; i < alpha;i++){
-			    delay += (rand() % 255 + 1);
-		    } 
+        PORTB = ~PORTB;
+    } */
 
-		    for(i = 0; i < beta;i++){
-			    sum += (rand() % 255 + 1);
-		    } 
-		    sum = sum / beta ;
-		    if (sum < 200) sum += 50; //skew to higher levels and prevent it going out
-
-		    //candle colour
-		    red = sum;
-		    green = sum*0.8;
-		    blue = sum*0.15;
-		
-		    rgb_fade_d(red,green,blue, delay*10); 
-		
-	    }
 
     //Init queue
     //sample_init(&X);
     //sample_init(&Y);
     //sample_init(&Z);
 
-    // Initialise I2C and the ADXL345
-    i2c_init();
-    initADXL345();
+    
     //init_OC1A_CTC();
 
     //Print device ID
     itoa(devidADXL345(), buffer, 10);
     uart_puts(buffer);  
-
 
     uart_puts("KXPS5 Initialised\n");
     j = 0;
@@ -376,14 +377,19 @@ int main()
        
             // Calculate y/x using integer division
             tempVar = abs(vec[1]);
-            tempVar = tempVar << 9;
+            tempVar = tempVar << 8;
             //Avoid divide by zero
             if (vec[0] != 0) {
                 dummy = ldiv(tempVar,abs(vec[0]));
             }
             else {
-                dummy.quot = 50000;
+                dummy.quot = 65535;
             }
+            //Clamp the quotient at size of uint16
+            if (dummy.quot > 65535) {
+                dummy.quot = 65535;
+            }
+        
             ultoa(dummy.quot, buffer, 10);
             strcat(str_out, buffer);
             strcat(str_out, ", ");
@@ -391,95 +397,104 @@ int main()
             // Work out which quadrant we're in
             if (vec[0] >= 0) {
                 if (vec[1] >= 0) {
-                    quadrant = 1;
-                }
-                else {
-                    quadrant = 4;
-                }
-            }
-            else if (vec[0] < 0) {
-                if (vec[1] >= 0) {
-                    quadrant = 2;
+                    quadrant = 0;
                 }
                 else {
                     quadrant = 3;
                 }
             }
-            utoa(quadrant, buffer, 10);
-            strcat(str_out, buffer);
-            strcat(str_out, ", ");
+            else if (vec[0] < 0) {
+                if (vec[1] >= 0) {
+                    quadrant = 1;
+                }
+                else {
+                    quadrant = 2;
+                }
+            }
+            //utoa(quadrant, buffer, 10);
+            //strcat(str_out, buffer);
+            //strcat(str_out, ", ");
 
             // Now look up the PWM values...
             //TODO move this into a function
             
-            if (quadrant == 1){
-                k = 0;
-                for (l = 0; l < len(lutQ1)-1; l++){
-                    if (pgm_read_word(&lutQ1[l][0]) < dummy.quot) {
-                       k++;
-                    }
-                    else {
-                        break;
-                    }
-                }
-                for (i = 1; i < 4; i++){
-                    // Convert integer to char
-                    itoa(pgm_read_word(&lutQ1[k][i]), buffer, 10);
-                    strcat(str_out, strcat(buffer, " "));
-                }
-            }
-            else if (quadrant == 2){
-                k = 0;
-                for (l = 0; l < len(lutQ2)-1; l++){
-                    if (pgm_read_word(&lutQ2[l][0]) < dummy.quot) {
-                       k++;
-                    }
-                    else {
-                        break;
-                    }
-                }
-                for (i = 1; i < 4; i++){
-                    // Convert integer to char
-                    itoa(pgm_read_word(&lutQ2[k][i]), buffer, 10);
-                    strcat(str_out, strcat(buffer, " "));
-                }
-            }
-            else if (quadrant == 3){
-                k = 0;
-                for (l = 0; l < len(lutQ3)-1; l++){
-                    if (pgm_read_word(&lutQ3[l][0]) < dummy.quot) {
-                       k++;
-                    }
-                    else {
-                        break;
-                    }
-                }
-                for (i = 1; i < 4; i++){
-                    // Convert integer to char
-                    itoa(pgm_read_word(&lutQ3[k][i]), buffer, 10);
-                    strcat(str_out, strcat(buffer, " "));
+            k = 0;
+            if ( (quadrant == 0) | (quadrant == 2) ){
+                //Ratio is increasing throughout the quadrant so count up
+                //Ensure that entry in the lut is >= to the quotient
+                while ((uint16_t)dummy.quot > pgm_read_word(&lut[k])){
+                    k++;  
                 }
             }
             else {
-                k = 0;
-                for (l = 0; l < len(lutQ4)-1; l++){
-                    if (pgm_read_word(&lutQ4[l][0]) < dummy.quot) {
-                       k++;
-                    }
-                    else {
-                        break;
-                    }
+                //Ratio is decreasing so count down
+                k = 382 ;//len(lut)-1;
+                //Ensure that entry in the lut is >= to the quotient
+                while (pgm_read_word(&lut[k]) > dummy.quot ){
+                    k--;
                 }
-                for (i = 1; i < 4; i++){
-                    // Convert integer to char
-                    itoa(pgm_read_word(&lutQ4[k][i]), buffer, 10);
-                    strcat(str_out, strcat(buffer, " "));
-                }
+                //Invert k
+                k = 382 - k;
             }
-            
-            
 
+            utoa(quadrant, buffer, 10);
+            strcat(str_out, buffer);
+            strcat(str_out, ", ");
+            
+            itoa(k, buffer, 10);
+            uart_puts(buffer);  
+            //Now calculate the colour: 
+            for (int f=0; f < quadrant; f++) {
+                k += 383; 
+            }
 
+            red = 255;
+            green = 0;
+            blue = 0;
+            
+            strcat(str_out, "k: ");
+            itoa(k, buffer, 10);
+            strcat(str_out, buffer);
+            
+            while (green < 255 && k > 0){
+                green++;
+                k--;         
+            }
+            while (red > 0 && k > 0) {
+                red--;
+                k--;
+            }
+            while (blue < 255 && k > 0) {
+                blue++;
+                k--;
+            }
+            while (green > 0 && k > 0) {
+                green--;
+                k--;
+            }
+            while (red < 255 && k > 0) {
+                red++;
+                k--;
+            }
+            while (blue > 0 && k > 0) {
+                blue--;
+                k--;
+            }
+         
+            strcat(str_out, ", (");
+            itoa(red, buffer, 10);
+            strcat(str_out, strcat(buffer, ","));
+            itoa(green, buffer, 10);
+            strcat(str_out, strcat(buffer, ","));
+            itoa(blue, buffer, 10);
+            strcat(str_out, strcat(buffer, "), L:"));
+            
+            rgb_fade(red, green, blue);
+
+            r = sqrt(square(vec[0]) + square(vec[1]) + square(vec[2]));
+
+            ultoa(r, buffer, 10);
+            strcat(str_out, strcat(buffer, ""));
 
             //utoa(k, buffer, 10);
             //strcat(str_out, buffer);
@@ -489,6 +504,7 @@ int main()
             str_out[9] = '\0';
 
             j = 0;
+
         }
         j++;
         
@@ -499,6 +515,13 @@ ISR(TIMER1_COMPA_vect) //16bit one
 {
 	//PORTB = ~PORTB;	// Invert port A
 } 
+
+ISR(INT0_vect)
+{
+    
+    PORTB = ~PORTB;
+}
+
 
  //strcat(str_out, strcat(buffer, " "));
         //itoa(var2, buffer, 10);
