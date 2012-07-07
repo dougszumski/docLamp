@@ -119,19 +119,184 @@ void init_INT0 (void) //Pin D2
 	sei();
 }
 
-
-
-int main()
+void colourCalc(void)
 {
     char str_out[64] = "(x,y,z): ";
     char buffer[32];
     ldiv_t dummy;
     uint32_t tempVar;
-    int i, j;
+    int i;
     uint16_t k;
     uint16_t quadrant = 0;
     uint8_t  red,green,blue;
     uint16_t r;
+
+    PORTB = ~PORTB;
+
+    for (i = 0; i < 3; i++){
+        // Convert integer to char
+        itoa(vec[i], buffer, 10);
+        strcat(str_out, strcat(buffer, " "));
+    }
+    strcat(str_out, ", ");
+
+    // Calculate y/x using integer division
+    tempVar = abs(vec[1]);
+    tempVar = tempVar << 8;
+    //Avoid divide by zero
+    if (vec[0] != 0) {
+        dummy = ldiv(tempVar,abs(vec[0]));
+    }
+    else {
+        dummy.quot = 65535;
+    }
+    //Clamp the quotient at size of uint16
+    if (dummy.quot > 65535) {
+        dummy.quot = 65535;
+    }
+
+    ultoa(dummy.quot, buffer, 10);
+    strcat(str_out, buffer);
+    strcat(str_out, ", ");
+
+    // Work out which quadrant we're in
+    if (vec[0] >= 0) {
+        if (vec[1] >= 0) {
+            quadrant = 0;
+        }
+        else {
+            quadrant = 3;
+        }
+    }
+    else if (vec[0] < 0) {
+        if (vec[1] >= 0) {
+            quadrant = 1;
+        }
+        else {
+            quadrant = 2;
+        }
+    }
+    //utoa(quadrant, buffer, 10);
+    //strcat(str_out, buffer);
+    //strcat(str_out, ", ");
+
+    // Now look up the PWM values...
+    //TODO move this into a function
+    
+    k = 0;
+    if ( (quadrant == 0) | (quadrant == 2) ){
+        //Ratio is increasing throughout the quadrant so count up
+        //Ensure that entry in the lut is >= to the quotient
+        while ((uint16_t)dummy.quot > pgm_read_word(&atanLut[k])){
+            k++;  
+        }
+    }
+    else {
+        //Ratio is decreasing so count down
+        k = 382 ;//len(lut)-1;
+        //Ensure that entry in the lut is >= to the quotient
+        while (pgm_read_word(&atanLut[k]) > dummy.quot ){
+            k--;
+        }
+        //Invert k
+        k = 382 - k;
+    }
+
+    utoa(quadrant, buffer, 10);
+    strcat(str_out, buffer);
+    strcat(str_out, ", ");
+    
+    itoa(k, buffer, 10);
+    uart_puts(buffer);  
+    //Now calculate the colour: 
+    for (int f=0; f < quadrant; f++) {
+        k += 383; 
+    }
+
+    red = 255;
+    green = 0;
+    blue = 0;
+    
+    strcat(str_out, "k: ");
+    itoa(k, buffer, 10);
+    strcat(str_out, buffer);
+    
+    while (green < 255 && k > 0){
+        green++;
+        k--;         
+    }
+    while (red > 0 && k > 0) {
+        red--;
+        k--;
+    }
+    while (blue < 255 && k > 0) {
+        blue++;
+        k--;
+    }
+    while (green > 0 && k > 0) {
+        green--;
+        k--;
+    }
+    while (red < 255 && k > 0) {
+        red++;
+        k--;
+    }
+    while (blue > 0 && k > 0) {
+        blue--;
+        k--;
+    }
+ 
+    strcat(str_out, ", (");
+    itoa(red, buffer, 10);
+    strcat(str_out, strcat(buffer, ","));
+    itoa(green, buffer, 10);
+    strcat(str_out, strcat(buffer, ","));
+    itoa(blue, buffer, 10);
+    strcat(str_out, strcat(buffer, "), L:"));
+    
+    rgb_fade(red, green, blue);
+
+    //r = sqrt(square(vec[0]) + square(vec[1]) + square(vec[2]));
+
+    //ultoa(r, buffer, 10);
+    //strcat(str_out, strcat(buffer, ""));
+
+    //utoa(k, buffer, 10);
+    //strcat(str_out, buffer);
+
+    // Transmit to UART
+    uart_puts(str_out);  
+    str_out[9] = '\0';
+
+}
+
+void rgbSequence(void)
+{
+    // Lamp test 
+    rgb_fade(255,0,0); 	//red
+    while(1){
+        rgb_fade(255,255,0);	//yellow
+	    rgb_fade(0,255,0); 	//green
+	    rgb_fade(0,255,255);	//purple
+	    rgb_fade(0,0,255);  	//blue
+	    rgb_fade(255,0,255);	//pink
+	    rgb_fade(255,0,0); 	//red
+    }
+    
+}
+
+
+int main()
+{
+    char buffer[32];
+    uint8_t j, k;
+    ldiv_t dummy;
+    uint32_t tempVar;
+
+    //Init queue
+    //sample_init(&X);
+    //sample_init(&Y);
+    //sample_init(&Z);
     
     // Init UART and enable globals ints for UART
     uart_init( UART_BAUD_SELECT(UART_BAUD_RATE,F_CPU) ); 
@@ -140,206 +305,60 @@ int main()
     init_OC1A();
     init_OC1B();
     init_OC2();
-
     init_INT0();
+    //init_OC1A_CTC();
 
     // Initialise I2C and the ADXL345
     i2c_init();
     ADXL345_init();
     ADXL345_initDoubleTap();
+
+    //rgbSequence();
+
     //while(1){ADXL345_clearInt();
     //_delay_ms(2000);
     //};
    
-    // Lamp test 
-    /*
-    rgb_fade(255,0,0); 	//red
-    while(1){
-        rgb_fade(255,255,0);	//yellow
-	    rgb_fade(0,255,0); 	//green
-	    rgb_fade(0,255,255);	//purple
-	    rgb_fade(0,0,255);  	//blue
-	    rgb_fade(255,0,255);	//pink
-        rgb_fade(255,255,255);
-        rgb_fade(0,0,0);
-        _delay_ms(500);
-	    rgb_fade(255,0,0); 	//red
-    }} */
-
-    /*  //Timer test 
-    while(1) {
-        tempVar = 65535;
-        while (tempVar > 0) {
-            tempVar--;}
-
-        PORTB = ~PORTB;
-    } */
-
-
-    //Init queue
-    //sample_init(&X);
-    //sample_init(&Y);
-    //sample_init(&Z);
-
-    
-    //init_OC1A_CTC();
-
     //Print device ID
     itoa(ADXL345_devID(), buffer, 10);
     uart_puts(buffer);  
-
     uart_puts("KXPS5 Initialised\n");
+   
+    //Mainloop
     j = 0;
-    while(1){
-
+    while(1)
+    {
         // Update acceleration vector and concatenate into string
         ADXL345_updateVector(vec);
-        _delay_ms(1);
-
         
-        if (j == 255){
-        
-            PORTB = ~PORTB;
-
-            for (i = 0; i < 3; i++){
-                // Convert integer to char
-                itoa(vec[i], buffer, 10);
-                strcat(str_out, strcat(buffer, " "));
-            }
-            strcat(str_out, ", ");
-       
-            // Calculate y/x using integer division
-            tempVar = abs(vec[1]);
-            tempVar = tempVar << 8;
-            //Avoid divide by zero
-            if (vec[0] != 0) {
-                dummy = ldiv(tempVar,abs(vec[0]));
-            }
-            else {
-                dummy.quot = 65535;
-            }
-            //Clamp the quotient at size of uint16
-            if (dummy.quot > 65535) {
-                dummy.quot = 65535;
-            }
-        
-            ultoa(dummy.quot, buffer, 10);
-            strcat(str_out, buffer);
-            strcat(str_out, ", ");
-
-            // Work out which quadrant we're in
-            if (vec[0] >= 0) {
-                if (vec[1] >= 0) {
-                    quadrant = 0;
-                }
-                else {
-                    quadrant = 3;
-                }
-            }
-            else if (vec[0] < 0) {
-                if (vec[1] >= 0) {
-                    quadrant = 1;
-                }
-                else {
-                    quadrant = 2;
-                }
-            }
-            //utoa(quadrant, buffer, 10);
-            //strcat(str_out, buffer);
-            //strcat(str_out, ", ");
-
-            // Now look up the PWM values...
-            //TODO move this into a function
-            
-            k = 0;
-            if ( (quadrant == 0) | (quadrant == 2) ){
-                //Ratio is increasing throughout the quadrant so count up
-                //Ensure that entry in the lut is >= to the quotient
-                while ((uint16_t)dummy.quot > pgm_read_word(&lut[k])){
-                    k++;  
-                }
-            }
-            else {
-                //Ratio is decreasing so count down
-                k = 382 ;//len(lut)-1;
-                //Ensure that entry in the lut is >= to the quotient
-                while (pgm_read_word(&lut[k]) > dummy.quot ){
-                    k--;
-                }
-                //Invert k
-                k = 382 - k;
-            }
-
-            utoa(quadrant, buffer, 10);
-            strcat(str_out, buffer);
-            strcat(str_out, ", ");
-            
-            itoa(k, buffer, 10);
-            uart_puts(buffer);  
-            //Now calculate the colour: 
-            for (int f=0; f < quadrant; f++) {
-                k += 383; 
-            }
-
-            red = 255;
-            green = 0;
-            blue = 0;
-            
-            strcat(str_out, "k: ");
-            itoa(k, buffer, 10);
-            strcat(str_out, buffer);
-            
-            while (green < 255 && k > 0){
-                green++;
-                k--;         
-            }
-            while (red > 0 && k > 0) {
-                red--;
-                k--;
-            }
-            while (blue < 255 && k > 0) {
-                blue++;
-                k--;
-            }
-            while (green > 0 && k > 0) {
-                green--;
-                k--;
-            }
-            while (red < 255 && k > 0) {
-                red++;
-                k--;
-            }
-            while (blue > 0 && k > 0) {
-                blue--;
-                k--;
-            }
-         
-            strcat(str_out, ", (");
-            itoa(red, buffer, 10);
-            strcat(str_out, strcat(buffer, ","));
-            itoa(green, buffer, 10);
-            strcat(str_out, strcat(buffer, ","));
-            itoa(blue, buffer, 10);
-            strcat(str_out, strcat(buffer, "), L:"));
-            
-            rgb_fade(red, green, blue);
-
-            //r = sqrt(square(vec[0]) + square(vec[1]) + square(vec[2]));
-
-            //ultoa(r, buffer, 10);
-            //strcat(str_out, strcat(buffer, ""));
-
-            //utoa(k, buffer, 10);
-            //strcat(str_out, buffer);
-
-            // Transmit to UART
-            uart_puts(str_out);  
-            str_out[9] = '\0';
-
-            j = 0;
-
+        //Calculate phi assuming that r = g
+        tempVar = abs(vec[2]);
+        tempVar = tempVar << 11;
+        dummy = ldiv(tempVar,224);
+        k = 0;
+        while (pgm_read_word(&acosLut[k]) > (uint16_t)dummy.quot){
+             k++;  
         }
-        j++;
+        //We went past the position so step back
+        if (k > 0){ 
+            k--;
+        }
+        //ultoa(dummy.quot, buffer, 10);
+        //strcat(k, strcat(buffer, ","));
+        itoa(k, buffer, 10);
+        uart_puts(buffer); 
+    
+        //If lamp is in the right angle fade the colour
+        //TODO Add brightness fade
+        //TODO Add time delay lock
+        //TODO Add magnitude check
+        //TODO Add mode selector with double tap
+        //TODO Add orientation check from sign of vec[2]
+        if (k > 25 && k < 75 ) {
+            colourCalc();
+        }
+
+        _delay_ms(1);
         
     }	
 }

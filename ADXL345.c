@@ -1,9 +1,7 @@
-#include <stdlib.h>
-#include <avr/io.h>
 #include <stdint.h>
 #include "ADXL345.h"
 #include "i2cmaster.h"
-#include "sample.h"
+//#include "sample.h"
 
 void ADXL345_init(void)
 {
@@ -54,6 +52,7 @@ void ADXL345_updateVector(int16_t *vec)
 
 void ADXL345_initDoubleTap(void)
 {
+
     //Set tap threshold: 62.5mg/LSB
     i2c_start_wait(ADXL345+I2C_WRITE);
     i2c_write(THRESH_TAP); 
