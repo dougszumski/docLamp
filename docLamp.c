@@ -22,13 +22,13 @@
 #define UART_BAUD_RATE      57600      
 
 /* Number of ms between PWM steps*/
-#define DELAY 1
+#define DELAY 0
 
 /* Macros */
 #define len(x) (sizeof (x) / sizeof (*(x)))
 
 int16_t vec[3];
-//sample X, Y, Z;
+sample X, Y, Z;
 
 void configPorts(void)
 {
@@ -129,7 +129,7 @@ void colourCalc(void)
     uint16_t k;
     uint16_t quadrant = 0;
     uint8_t  red,green,blue;
-    uint16_t r;
+    //uint16_t r;
 
     PORTB = ~PORTB;
 
@@ -143,6 +143,7 @@ void colourCalc(void)
     // Calculate y/x using integer division
     tempVar = abs(vec[1]);
     tempVar = tempVar << 8;
+
     //Avoid divide by zero
     if (vec[0] != 0) {
         dummy = ldiv(tempVar,abs(vec[0]));
@@ -176,9 +177,6 @@ void colourCalc(void)
             quadrant = 2;
         }
     }
-    //utoa(quadrant, buffer, 10);
-    //strcat(str_out, buffer);
-    //strcat(str_out, ", ");
 
     // Now look up the PWM values...
     //TODO move this into a function
@@ -209,10 +207,9 @@ void colourCalc(void)
     itoa(k, buffer, 10);
     uart_puts(buffer);  
     //Now calculate the colour: 
-    for (int f=0; f < quadrant; f++) {
-        k += 383; 
-    }
-
+   
+    //FIXME should this be 383 or 382???
+    k += 383*quadrant; 
     red = 255;
     green = 0;
     blue = 0;
@@ -256,14 +253,6 @@ void colourCalc(void)
     
     rgb_fade(red, green, blue);
 
-    //r = sqrt(square(vec[0]) + square(vec[1]) + square(vec[2]));
-
-    //ultoa(r, buffer, 10);
-    //strcat(str_out, strcat(buffer, ""));
-
-    //utoa(k, buffer, 10);
-    //strcat(str_out, buffer);
-
     // Transmit to UART
     uart_puts(str_out);  
     str_out[9] = '\0';
@@ -282,21 +271,20 @@ void rgbSequence(void)
 	    rgb_fade(255,0,255);	//pink
 	    rgb_fade(255,0,0); 	//red
     }
-    
 }
 
 
 int main()
 {
     char buffer[32];
-    uint8_t j, k;
+    uint8_t k;
     ldiv_t dummy;
     uint32_t tempVar;
 
     //Init queue
-    //sample_init(&X);
-    //sample_init(&Y);
-    //sample_init(&Z);
+    sample_init(&X);
+    sample_init(&Y);
+    sample_init(&Z);
     
     // Init UART and enable globals ints for UART
     uart_init( UART_BAUD_SELECT(UART_BAUD_RATE,F_CPU) ); 
@@ -325,11 +313,18 @@ int main()
     uart_puts("KXPS5 Initialised\n");
    
     //Mainloop
-    j = 0;
     while(1)
     {
         // Update acceleration vector and concatenate into string
-        ADXL345_updateVector(vec);
+        ADXL345_updateVector(&vec[0]);
+
+        // Average the vector
+        sample_push(&X, vec[0]);
+        sample_push(&Y, vec[1]);
+        sample_push(&Z, vec[2]);
+        vec[0] = sample_average(&X);
+        vec[1] = sample_average(&Y);
+        vec[2] = sample_average(&Z);
         
         //Calculate phi assuming that r = g
         tempVar = abs(vec[2]);
@@ -352,8 +347,10 @@ int main()
         //TODO Add brightness fade
         //TODO Add time delay lock
         //TODO Add magnitude check
-        //TODO Add mode selector with double tap
+        //TODO Add mode selector with double tap 
         //TODO Add orientation check from sign of vec[2]
+        //TODO bring back sample averaging!!
+        //TODO Double tap to unlock?
         if (k > 25 && k < 75 ) {
             colourCalc();
         }
@@ -370,34 +367,6 @@ ISR(TIMER1_COMPA_vect) //16bit one
 
 ISR(INT0_vect)
 {
-    
     PORTB = ~PORTB;
 }
-
-
- //strcat(str_out, strcat(buffer, " "));
-        //itoa(var2, buffer, 10);
-        //strcat(str_out, buffer);
-        
-        //Calculate r
-        /*r = sqrt(square(vec[0]) + square(vec[1]) + square(vec[2]));
-        dtostrf(r, 8, 4, r_str);
-        strcat(str_out, r_str);
-        strcat(str_out, ", ");
-
-        //Calculate theta
-        theta = atan2(vec[1], vec[0]);
-        if (theta < 0.0) { 
-            theta += M_PI*2;
-        }
-        dtostrf(theta, 6, 4, theta_str);
-        strcat(str_out, theta_str);
-        strcat(str_out, ", ");
-
-        //Calculate phi
-        phi = acos(vec[2]/r);
-        dtostrf(phi, 8, 4, phi_str);
-        strcat(str_out, phi_str);
-        */
-
 

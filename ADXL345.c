@@ -1,7 +1,6 @@
 #include <stdint.h>
 #include "ADXL345.h"
 #include "i2cmaster.h"
-//#include "sample.h"
 
 void ADXL345_init(void)
 {
@@ -34,20 +33,10 @@ void ADXL345_updateVector(int16_t *vec)
     zH = i2c_readNak();  
     i2c_stop();
 
-    // Update the acceleration vector -- assumes data is right justified
-    //sample_push(&X, (xH << 8) | xL);
-    //sample_push(&Y, (yH << 8) | yL);
-    //sample_push(&Z, (zH << 8) | zL);
-
-    //vec[0] = sample_average(&X);
-    //vec[1] = sample_average(&Y);
-    //vec[2] = sample_average(&Z);
-    
     //Data is Right justified
     vec[0] = (((xH << 8) | xL)) ;
     vec[1] = (((yH << 8) | yL)) ;
     vec[2] = (((zH << 8) | zL)) ;
-
 }
 
 void ADXL345_initDoubleTap(void)
