@@ -24,6 +24,11 @@
 #define INT_MAP 0x2F
 #define INT_SOURCE 0x30
 
+/* Offset calibration */
+#define OFSX 0x1E
+#define OFSY 0x1F
+#define OFSZ 0x20
+
 /* Initialise the ADXL345 with predefined registers */
 void ADXL345_init(void);
 
@@ -38,5 +43,8 @@ uint8_t ADXL345_devID(void);
 
 /* Clear the interrupt register */
 void ADXL345_clearInt(void);
+
+/* Add offset to acceleration vector */
+void ADXL345_setOffset(int8_t xOff, int8_t yOff, int8_t zOff);
 
 #endif //ADXL345_H

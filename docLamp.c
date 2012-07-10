@@ -119,8 +119,9 @@ void init_INT0 (void) //Pin D2
 	sei();
 }
 
-void colourCalc(void)
+void colourCalc(uint8_t phi)
 {
+    //TODO USE a delayed fade if colour difference is large to avoid jumps
     char str_out[64] = "(x,y,z): ";
     char buffer[32];
     ldiv_t dummy;
@@ -242,6 +243,11 @@ void colourCalc(void)
         blue--;
         k--;
     }
+
+    //Phi will be a number between 0 and 50. 
+    phi -= 25;
+
+
  
     strcat(str_out, ", (");
     itoa(red, buffer, 10);
@@ -317,7 +323,7 @@ int main()
     {
         // Update acceleration vector and concatenate into string
         ADXL345_updateVector(&vec[0]);
-
+        //TODO do this directly
         // Average the vector
         sample_push(&X, vec[0]);
         sample_push(&Y, vec[1]);
@@ -329,15 +335,14 @@ int main()
         //Calculate phi assuming that r = g
         tempVar = abs(vec[2]);
         tempVar = tempVar << 11;
-        dummy = ldiv(tempVar,224);
+        dummy = ldiv(tempVar,224); //aprx g.
         k = 0;
-        while (pgm_read_word(&acosLut[k]) > (uint16_t)dummy.quot){
+        while (pgm_read_word(&acosLut[k]) >= (uint16_t)dummy.quot){
              k++;  
         }
         //We went past the position so step back
-        if (k > 0){ 
-            k--;
-        }
+        k--;
+
         //ultoa(dummy.quot, buffer, 10);
         //strcat(k, strcat(buffer, ","));
         itoa(k, buffer, 10);
@@ -348,11 +353,11 @@ int main()
         //TODO Add time delay lock
         //TODO Add magnitude check
         //TODO Add mode selector with double tap 
-        //TODO Add orientation check from sign of vec[2]
-        //TODO bring back sample averaging!!
-        //TODO Double tap to unlock?
-        if (k > 25 && k < 75 ) {
-            colourCalc();
+        //TODO Add orientation check from sign of vec[2]??
+        //TODO Double tap to unlock?    
+        //The zone of of the doughnut.
+        if (k > 25 && k < 75) {
+            colourCalc(k);
         }
 
         _delay_ms(1);

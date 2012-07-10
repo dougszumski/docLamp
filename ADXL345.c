@@ -48,7 +48,7 @@ void ADXL345_initDoubleTap(void)
     i2c_write(0x40);         
     i2c_stop();
 
-    //Write the DUR, LATENT and WINDOW bits sequentially
+    //Write the DUR, LATENT and WINDOW bytes sequentially
     i2c_start_wait(ADXL345+I2C_WRITE);     
     i2c_write(DUR); 
     //Maximum time DURation above thereshold to be classed as a tap: 625us/LSB
@@ -103,6 +103,19 @@ void ADXL345_clearInt(void)
     i2c_readNak();  
     i2c_stop();
 
+}
+
+void ADXL345_setOffset(int8_t xOff, int8_t yOff, int8_t zOff)
+{
+    //Write the offset bytes sequentially
+    //NOTE: Offsets are additive, 15.6mg/LSB which is 4 times _full_ res
+    //sensitivty: 3.9mg/LSB
+    i2c_start_wait(ADXL345+I2C_WRITE);     
+    i2c_write(OFSX); 
+    i2c_write(xOff);         
+    i2c_write(yOff);         
+    i2c_write(zOff);         
+    i2c_stop();
 }
 
 
