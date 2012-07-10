@@ -29,6 +29,7 @@
 
 int16_t vec[3];
 sample X, Y, Z;
+volatile uint8_t mode;
 
 void configPorts(void)
 {
@@ -132,7 +133,7 @@ void colourCalc(uint8_t phi)
     uint8_t  red,green,blue;
     //uint16_t r;
 
-    PORTB = ~PORTB;
+    //PORTB = ~PORTB;
 
     for (i = 0; i < 3; i++){
         // Convert integer to char
@@ -246,9 +247,9 @@ void colourCalc(uint8_t phi)
 
     //Phi will be a number between 0 and 50. 
     phi -= 25;
+    //We now have 25 steps to fade to black
+    //TODO Is this really necessary??!
 
-
- 
     strcat(str_out, ", (");
     itoa(red, buffer, 10);
     strcat(str_out, strcat(buffer, ","));
@@ -269,14 +270,14 @@ void rgbSequence(void)
 {
     // Lamp test 
     rgb_fade(255,0,0); 	//red
-    while(1){
+    //while(mode == 2){
         rgb_fade(255,255,0);	//yellow
 	    rgb_fade(0,255,0); 	//green
 	    rgb_fade(0,255,255);	//purple
 	    rgb_fade(0,0,255);  	//blue
 	    rgb_fade(255,0,255);	//pink
 	    rgb_fade(255,0,0); 	//red
-    }
+    //}
 }
 
 
@@ -318,47 +319,64 @@ int main()
     uart_puts(buffer);  
     uart_puts("KXPS5 Initialised\n");
    
+    mode = 0;
     //Mainloop
     while(1)
     {
-        // Update acceleration vector and concatenate into string
-        ADXL345_updateVector(&vec[0]);
-        //TODO do this directly
-        // Average the vector
-        sample_push(&X, vec[0]);
-        sample_push(&Y, vec[1]);
-        sample_push(&Z, vec[2]);
-        vec[0] = sample_average(&X);
-        vec[1] = sample_average(&Y);
-        vec[2] = sample_average(&Z);
-        
-        //Calculate phi assuming that r = g
-        tempVar = abs(vec[2]);
-        tempVar = tempVar << 11;
-        dummy = ldiv(tempVar,224); //aprx g.
-        k = 0;
-        while (pgm_read_word(&acosLut[k]) >= (uint16_t)dummy.quot){
-             k++;  
-        }
-        //We went past the position so step back
-        k--;
+        while (mode == 1){
+            // Update acceleration vector and concatenate into string
+            ADXL345_updateVector(&vec[0]);
+            //TODO do this directly
+            // Average the vector
+            sample_push(&X, vec[0]);
+            sample_push(&Y, vec[1]);
+            sample_push(&Z, vec[2]);
+            vec[0] = sample_average(&X);
+            vec[1] = sample_average(&Y);
+            vec[2] = sample_average(&Z);
+            
+            //Calculate phi assuming that r = g
+            tempVar = abs(vec[2]);
+            tempVar = tempVar << 11;
+            dummy = ldiv(tempVar,224); //aprx g.
+            k = 0;
+            while (pgm_read_word(&acosLut[k]) >= (uint16_t)dummy.quot){
+                 k++;  
+            }
+            //We went past the position so step back
+            k--;
 
-        //ultoa(dummy.quot, buffer, 10);
-        //strcat(k, strcat(buffer, ","));
-        itoa(k, buffer, 10);
-        uart_puts(buffer); 
-    
-        //If lamp is in the right angle fade the colour
-        //TODO Add brightness fade
-        //TODO Add time delay lock
-        //TODO Add magnitude check
-        //TODO Add mode selector with double tap 
-        //TODO Add orientation check from sign of vec[2]??
-        //TODO Double tap to unlock?    
-        //The zone of of the doughnut.
-        if (k > 25 && k < 75) {
-            colourCalc(k);
+            //ultoa(dummy.quot, buffer, 10);
+            //strcat(k, strcat(buffer, ","));
+            itoa(k, buffer, 10);
+            uart_puts(buffer); 
+        
+            //If lamp is in the right angle fade the colour
+            //TODO Add brightness fade
+            //TODO Add time delay lock
+            //TODO Add magnitude check
+            //TODO Add mode selector with double tap 
+            //TODO Add orientation check from sign of vec[2]??
+            //TODO Double tap to unlock?    
+            //The zone of of the doughnut.
+            if (k > 25 && k < 75) {
+                colourCalc(k);
+            }
+        //TODO Should be int the int. routine?
+        ADXL345_clearInt();
         }
+        while (mode == 2) {
+            //TODO this needs tidying up
+            //rgbSequence();
+            rgb_fade(255,255,0);	//yellow
+        }
+        ADXL345_clearInt();
+        while (mode == 3) {
+            //TODO this needs tidying up
+            //rgbSequence();
+            rgb_fade(255,0,0);	//red
+        }
+        ADXL345_clearInt();
 
         _delay_ms(1);
         
@@ -372,6 +390,10 @@ ISR(TIMER1_COMPA_vect) //16bit one
 
 ISR(INT0_vect)
 {
+    mode +=1;
+    if (mode > 3) {
+        mode = 0;
+    }
     PORTB = ~PORTB;
 }
 

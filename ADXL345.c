@@ -45,7 +45,7 @@ void ADXL345_initDoubleTap(void)
     //Set tap threshold: 62.5mg/LSB
     i2c_start_wait(ADXL345+I2C_WRITE);
     i2c_write(THRESH_TAP); 
-    i2c_write(0x40);         
+    i2c_write(0x30);         
     i2c_stop();
 
     //Write the DUR, LATENT and WINDOW bytes sequentially
