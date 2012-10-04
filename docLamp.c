@@ -21,8 +21,6 @@
 /* UART baud */
 #define UART_BAUD_RATE      57600      
 
-/* Number of ms between PWM steps*/
-#define DELAY 0
 
 /* Macros */
 #define len(x) (sizeof (x) / sizeof (*(x)))
@@ -30,12 +28,16 @@
 int16_t vec[3];
 sample X, Y, Z;
 volatile uint8_t mode;
+uint16_t theta;
+uint8_t phi;
+
+//#define _DEBUG 
 
 void configPorts(void)
 {
     //Set all pins to inputs
     DDRB = 0x00;
-    DDRB |= ((1<<DDB0) | (1<<DDB1) | (1<<DDB2) | (1<<DDB3)); //Red LED is only output
+    DDRB |= ((1<<DDB0) | (1<<DDB1) | (1<<DDB2) | (1<<DDB3)); //Red LED, PWM channels
     DDRC = 0x00;
     DDRD = 0x00;
 
@@ -43,7 +45,8 @@ void configPorts(void)
     PORTB = 0x00;
     PORTB = ((1<<PB0) | (0<<PB1) | (0<<PB2) | (0<<PB3)); //Turn LED off
     PORTC = 0xFF;
-    PORTD = 0x00; //only d3 needsa to be 0
+    PORTD = 0x00; //D2 must be 0V, else applies 5V to INT pin on ADXL
+    //PORTD = (1<<PD0) | (0<<PD1);
 }
 
 void init_OC1A_CTC (void) //16 bit CTC counter
@@ -96,7 +99,7 @@ void init_OC2 (void)
 } 
 
 //RGB fader
-void rgb_fade(uint8_t red_target, uint8_t green_target, uint8_t blue_target) 
+void rgb_fade(uint8_t red_target, uint8_t green_target, uint8_t blue_target, uint16_t delay) 
 {	
 	//Adjust brightness level to targets	
 	while ( (OCR1B != red_target) | (OCR2 != green_target) | (OCR1A != blue_target)) 
@@ -107,40 +110,76 @@ void rgb_fade(uint8_t red_target, uint8_t green_target, uint8_t blue_target)
 		if (OCR2 > green_target) OCR2--;
 		if (OCR1A < blue_target) OCR1A++;
 		if (OCR1A > blue_target) OCR1A--;
-		_delay_ms(DELAY);
+        _delay_loop_2(delay);
 	}  
 } 
 
 void init_INT0 (void) //Pin D2
 {
     DDRD |= (0<<DDRD);
-	//PORTD |= (0<<PD3);
-	MCUCR |= (0 << ISC01) | (1 << ISC00); //Level change for int. p66
+	//PORTD |= (0<<PD2);
+	MCUCR |= (1 << ISC01) | (1 << ISC00); //Level change for int. p66
 	GICR |= (1 << INT0); //Enable INT0
 	sei();
 }
 
-void colourCalc(uint8_t phi)
+void init_INT1 (void) //Pin D2
 {
-    //TODO USE a delayed fade if colour difference is large to avoid jumps
-    char str_out[64] = "(x,y,z): ";
-    char buffer[32];
+    DDRD |= (0<<DDRD);
+	PORTD |= (1<<PD3); //Set pull up for switch
+	MCUCR |= (1 << ISC11) | (0 << ISC10); //Falling edge for int. p66
+	GICR |= (1 << INT1); //Enable INT1
+	sei();
+}
+
+void updatePosition (void)
+{
     ldiv_t dummy;
     uint32_t tempVar;
-    int i;
     uint16_t k;
     uint16_t quadrant = 0;
-    uint8_t  red,green,blue;
-    //uint16_t r;
 
-    //PORTB = ~PORTB;
+    #ifdef _DEBUG
+    char str_out[64] = "(x,y,z): ";
+    char buffer[32];
+    uint8_t i;
+    #endif
 
+    // Update acceleration vector and concatenate into string
+    ADXL345_updateVector(&vec[0]);
+    //TODO do this directly
+    // Average the vector
+    sample_push(&X, vec[0]);
+    sample_push(&Y, vec[1]);
+    sample_push(&Z, vec[2]);
+    vec[0] = sample_average(&X);
+    vec[1] = sample_average(&Y);
+    vec[2] = -1*sample_average(&Z);
+
+    #ifdef _DEBUG
     for (i = 0; i < 3; i++){
         // Convert integer to char
         itoa(vec[i], buffer, 10);
         strcat(str_out, strcat(buffer, " "));
     }
     strcat(str_out, ", ");
+    #endif 
+
+    //Calculate phi assuming that r = g
+    tempVar = abs(vec[2]);
+    tempVar = tempVar << 11;
+    dummy = ldiv(tempVar,224); //aprx g.
+    phi = 0;
+    while (pgm_read_word(&acosLut[phi]) >= (uint16_t)dummy.quot){
+         phi++;  
+    }
+    //We went past the position so step back
+    phi--;
+    
+    #ifdef _DEBUG
+    itoa(phi, buffer, 10);
+    uart_puts(buffer); 
+    #endif
 
     // Calculate y/x using integer division
     tempVar = abs(vec[1]);
@@ -158,9 +197,11 @@ void colourCalc(uint8_t phi)
         dummy.quot = 65535;
     }
 
+    #ifdef _DEBUG
     ultoa(dummy.quot, buffer, 10);
     strcat(str_out, buffer);
     strcat(str_out, ", ");
+    #endif
 
     // Work out which quadrant we're in
     if (vec[0] >= 0) {
@@ -181,8 +222,6 @@ void colourCalc(uint8_t phi)
     }
 
     // Now look up the PWM values...
-    //TODO move this into a function
-    
     k = 0;
     if ( (quadrant == 0) | (quadrant == 2) ){
         //Ratio is increasing throughout the quadrant so count up
@@ -202,54 +241,70 @@ void colourCalc(uint8_t phi)
         k = 382 - k;
     }
 
+    #ifdef _DEBUG
     utoa(quadrant, buffer, 10);
     strcat(str_out, buffer);
     strcat(str_out, ", ");
-    
     itoa(k, buffer, 10);
     uart_puts(buffer);  
-    //Now calculate the colour: 
-   
+    #endif
+
     //FIXME should this be 383 or 382???
+    //TODO ass k back in
     k += 383*quadrant; 
+    theta = k;
+    
+    #ifdef _DEBUG
+    strcat(str_out, "Theta: ");
+    itoa(theta, buffer, 10);
+    strcat(str_out, buffer);
+    #endif
+
+}
+
+void pos2Colour (void)
+{
+    uint8_t red,green,blue;
+    uint16_t i;
+    
+    #ifdef _DEBUG
+    char str_out[64] = "(r,g,b): ";
+    char buffer[32];
+    #endif
+
     red = 255;
     green = 0;
     blue = 0;
     
-    strcat(str_out, "k: ");
-    itoa(k, buffer, 10);
-    strcat(str_out, buffer);
-    
-    while (green < 255 && k > 0){
+    i = theta;
+    while (green < 255 && i > 0){
         green++;
-        k--;         
+        i--;         
     }
-    while (red > 0 && k > 0) {
+    while (red > 0 && i > 0) {
         red--;
-        k--;
+        i--;
     }
-    while (blue < 255 && k > 0) {
+    while (blue < 255 && i > 0) {
         blue++;
-        k--;
+        i--;
     }
-    while (green > 0 && k > 0) {
+    while (green > 0 && i > 0) {
         green--;
-        k--;
+        i--;
     }
-    while (red < 255 && k > 0) {
+    while (red < 255 && i > 0) {
         red++;
-        k--;
+        i--;
     }
-    while (blue > 0 && k > 0) {
+    while (blue > 0 && i > 0) {
         blue--;
-        k--;
+        i--;
     }
+        
+    rgb_fade(red, green, blue, 5000);
 
-    //Phi will be a number between 0 and 50. 
-    phi -= 25;
-    //We now have 25 steps to fade to black
-    //TODO Is this really necessary??!
-
+    #ifdef _DEBUG
     strcat(str_out, ", (");
     itoa(red, buffer, 10);
     strcat(str_out, strcat(buffer, ","));
@@ -257,143 +312,236 @@ void colourCalc(uint8_t phi)
     strcat(str_out, strcat(buffer, ","));
     itoa(blue, buffer, 10);
     strcat(str_out, strcat(buffer, "), L:"));
-    
-    rgb_fade(red, green, blue);
-
-    // Transmit to UART
     uart_puts(str_out);  
     str_out[9] = '\0';
-
+    #endif
+    
 }
 
-void rgbSequence(void)
+void pos2Brightness (void)
 {
-    // Lamp test 
-    rgb_fade(255,0,0); 	//red
-    //while(mode == 2){
-        rgb_fade(255,255,0);	//yellow
-	    rgb_fade(0,255,0); 	//green
-	    rgb_fade(0,255,255);	//purple
-	    rgb_fade(0,0,255);  	//blue
-	    rgb_fade(255,0,255);	//pink
-	    rgb_fade(255,0,0); 	//red
-    //}
-}
+    uint8_t bri =0;
+    uint16_t i;
 
+    i = theta;
+    while (bri < 255 && i > 0){
+        bri++;
+        i--;         
+    }
+    while (bri > 0 && i > 0) {
+        bri--;
+        i--;
+    }
+    while (bri < 255 && i > 0) {
+        bri++;
+        i--;
+    }
+    while (bri > 0 && i > 0) {
+        bri--;
+        i--;
+    }
+    while (bri < 255 && i > 0) {
+        bri++;
+        i--;
+    }
+    while (bri > 0 && i > 0) {
+        bri--;
+        i--;
+    }
+        
+    rgb_fade(bri, bri, bri, 10000);
+
+}
 
 int main()
 {
+    #ifdef _DEBUG
     char buffer[32];
-    uint8_t k;
-    ldiv_t dummy;
-    uint32_t tempVar;
+    #endif
 
     //Init queue
     sample_init(&X);
     sample_init(&Y);
     sample_init(&Z);
+
+    uint16_t sum, delay;
+    uint8_t beta, alpha, red,green,blue, i;
     
     // Init UART and enable globals ints for UART
+    #ifdef _DEBUG
     uart_init( UART_BAUD_SELECT(UART_BAUD_RATE,F_CPU) ); 
+    #endif
     sei();
     configPorts();
     init_OC1A();
     init_OC1B();
     init_OC2();
+    //Double tap
     init_INT0();
-    //init_OC1A_CTC();
+    //Switch
+    init_INT1();
 
     // Initialise I2C and the ADXL345
     i2c_init();
     ADXL345_init();
     ADXL345_initDoubleTap();
 
-    //rgbSequence();
-
-    //while(1){ADXL345_clearInt();
-    //_delay_ms(2000);
-    //};
-   
+    #ifdef _DEBUG
     //Print device ID
     itoa(ADXL345_devID(), buffer, 10);
     uart_puts(buffer);  
     uart_puts("KXPS5 Initialised\n");
+    #endif
    
     mode = 0;
+    
+    /*
+    while(1){
+        while (mode == 0){
+            rgb_fade(0,0,0);
+        }
+        while (mode == 1){
+            rgb_fade(255,0,0);
+        }
+        while (mode == 2){
+            rgb_fade(255,255,0);
+        }
+        while (mode == 3){
+            rgb_fade(0,255,0);
+        }
+        while (mode == 4){
+            rgb_fade(0,255,255);
+        }
+        while (mode == 5){
+            rgb_fade(0,0,255);
+        }
+    //    
+    } 
+    */
+    
     //Mainloop
     while(1)
     {
-        while (mode == 1){
-            // Update acceleration vector and concatenate into string
-            ADXL345_updateVector(&vec[0]);
-            //TODO do this directly
-            // Average the vector
-            sample_push(&X, vec[0]);
-            sample_push(&Y, vec[1]);
-            sample_push(&Z, vec[2]);
-            vec[0] = sample_average(&X);
-            vec[1] = sample_average(&Y);
-            vec[2] = sample_average(&Z);
-            
-            //Calculate phi assuming that r = g
-            tempVar = abs(vec[2]);
-            tempVar = tempVar << 11;
-            dummy = ldiv(tempVar,224); //aprx g.
-            k = 0;
-            while (pgm_read_word(&acosLut[k]) >= (uint16_t)dummy.quot){
-                 k++;  
+        delay = 5000;
+        while (mode == 0) {
+            //Lamp off
+            rgb_fade(0,0,0, delay);
+        }
+        while (mode == 1) {
+            //White lamp TODO allow dimming
+            rgb_fade(255,255,255, delay);	//yellow
+            updatePosition();
+            if (phi > 20 && phi < 85) {
+                pos2Brightness();
             }
-            //We went past the position so step back
-            k--;
-
-            //ultoa(dummy.quot, buffer, 10);
-            //strcat(k, strcat(buffer, ","));
-            itoa(k, buffer, 10);
-            uart_puts(buffer); 
-        
-            //If lamp is in the right angle fade the colour
-            //TODO Add brightness fade
-            //TODO Add time delay lock
-            //TODO Add magnitude check
-            //TODO Add mode selector with double tap 
-            //TODO Add orientation check from sign of vec[2]??
-            //TODO Double tap to unlock?    
-            //The zone of of the doughnut.
-            if (k > 25 && k < 75) {
-                colourCalc(k);
-            }
-        //TODO Should be int the int. routine?
-        ADXL345_clearInt();
+        }
+        if (mode == 2) {
+        //Indicator the for colour select mode
+        rgb_fade(0,0,0, delay);
+        delay = 0;
+        rgb_fade(15,0,0, delay);
+        rgb_fade(0,0,0, delay);
+        rgb_fade(0,15,0, delay);
+        rgb_fade(0,0,0, delay);
+        rgb_fade(0,0,15, delay);
+        rgb_fade(0,0,0, delay);
         }
         while (mode == 2) {
-            //TODO this needs tidying up
-            //rgbSequence();
-            rgb_fade(255,255,0);	//yellow
-        }
-        ADXL345_clearInt();
-        while (mode == 3) {
-            //TODO this needs tidying up
-            //rgbSequence();
-            rgb_fade(255,0,0);	//red
-        }
-        ADXL345_clearInt();
+            updatePosition();
+            //The zone of of the doughnut.
+            if (phi > 20 && phi < 85) {
+                pos2Colour();
+            }
+        }   
+        delay = 5000;
+        rgb_fade(0,0,0, delay);
+        while (mode ==3) {
+            //Candle simulation
+            //Generate normally distributed pseudo random numbers
+		    sum = 0;
+		    delay = 0;
+		    alpha = 8; //Delay distribution width 
+		    beta = (rand() % 10 + 1); //Random distribution width for brightness
 
-        _delay_ms(1);
-        
+		    for(i = 0; i < alpha;i++){
+			    delay += (rand() % 65535 + 1);
+		    } 
+            //Skew to higher levels to prevent too much flickering
+            if (delay < 10000) delay += 5000; 
+           
+		    for(i = 0; i < beta;i++){
+			    sum += (rand() % 255 + 1);
+		    } 
+		    sum = sum / beta ;
+            //Skew to higher levels and prevent it going out
+		    if (sum < 200) {
+                sum += 50; 
+            }
+		    //Candle colour
+		    red = sum;
+		    green = (sum*205) >> 8; //Equiv: *0.8
+		    blue = (sum*38) >> 8; //Equiv: *0.15
+		
+		    rgb_fade(red,green,blue, delay); 
+        }
+        delay = 5000;
+        rgb_fade(0,0,0, delay);
+        delay = 65000;
+        while (mode == 4) {
+            rgb_fade(255,0,0, delay); 	//red
+            rgb_fade(255,255,0, delay);	//yellow
+	        rgb_fade(0,255,0, delay); 	//green
+	        rgb_fade(0,255,255, delay);	//purple
+	        rgb_fade(0,0,255, delay);  	//blue
+	        rgb_fade(255,0,255, delay);	//pink
+	        rgb_fade(255,0,0, delay); 	//red
+      	
+        }
+             
     }	
+
+
 }
+
+
 
 ISR(TIMER1_COMPA_vect) //16bit one
 {
-	//PORTB = ~PORTB;	// Invert port A
+	//PORTB = ~PORTB;// Invert port A
 } 
 
 ISR(INT0_vect)
 {
-    mode +=1;
-    if (mode > 3) {
-        mode = 0;
-    }
+    //Double Tap
+    //mode++;
+    //if (mode > 3) {
+    //    mode = 0;
+    //}
     PORTB = ~PORTB;
+    //ADXL345_clearInt();
 }
+
+ISR(INT1_vect)
+{
+    uint8_t count = 0;
+	//rgb_fade(0,0,0);
+	while bit_is_clear(PIND, PD3) {
+		_delay_ms(5);
+        if (count < 254) {
+		    count++;
+        }
+		if (count == 10){
+            mode++;
+            if (mode > 4) {
+                mode = 0;
+            }
+		}
+        if (count == 200){
+            mode = 0;
+            //rgb_fade(0,0,0, 10000);
+        }
+    }
+}
+
+
 
