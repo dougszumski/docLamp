@@ -37,7 +37,7 @@ HEX_EEPROM_FLAGS += --change-section-lma .eeprom=0 --no-change-warnings
 OBJECTS = docLamp.o 
 
 ## Objects explicitly added by the user
-LINKONLYOBJECTS = twimaster.c uart.c sample.c lut.c ADXL345.c
+LINKONLYOBJECTS = twimaster.c uart.c sample.c lut.c ADXL345.c hConfig.c
 
 ## Build
 all: $(TARGET) docLamp.hex docLamp.eep docLamp.lss 
