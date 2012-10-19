@@ -11,5 +11,7 @@
 *.map
 *.elf
 *.o
-
+sandbox
+media
+dep
 
